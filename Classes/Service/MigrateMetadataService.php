@@ -22,8 +22,11 @@ namespace TYPO3\CMS\DamFalmigration\Service;
  *
  *  This copyright notice MUST APPEAR in all copies of the script!
  */
+use TYPO3\CMS\Core\Log\Logger;
+use TYPO3\CMS\Core\Log\LogManager;
 use TYPO3\CMS\Core\Messaging\FlashMessage;
 use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Extbase\Utility\LocalizationUtility;
 
 /**
@@ -114,6 +117,12 @@ class MigrateMetadataService extends AbstractService {
 	protected $isInstalledMedia = FALSE;
 
 	/**
+	 * @var Logger
+	 */
+	protected $logger;
+
+
+	/**
 	 * Main method
 	 *
 	 * @throws \TYPO3\CMS\Core\Resource\Exception\FileDoesNotExistException
@@ -134,6 +143,14 @@ class MigrateMetadataService extends AbstractService {
 
 		$this->isInstalledFileMetadata = ExtensionManagementUtility::isLoaded('filemetadata');
 		$this->isInstalledMedia = ExtensionManagementUtility::isLoaded('media');
+
+		/** @var LogManager $logManager */
+		$logManager = GeneralUtility::makeInstance('TYPO3\CMS\Core\Log\LogManager');
+		$this->logger = $logManager->getLogger(__CLASS__);
+
+		$this->checkConfiguredMigrationFieldsAgainstTable('sys_file', $this->columnMapping);
+		$this->checkConfiguredMigrationFieldsAgainstTable('sys_file_metadata', $this->mediaColumnMapping);
+		$this->checkConfiguredMigrationFieldsAgainstTable('sys_file_metadata', $this->fileMetadataColumnMapping);
 
 		while ($record = $this->database->sql_fetch_assoc($res)) {
 			$this->database->exec_UPDATEquery(
@@ -215,4 +232,31 @@ class MigrateMetadataService extends AbstractService {
 
 		return $updateData;
 	}
+
+	/**
+	 * Checks a list of field mappings (old field => new field) against the TCA definition of the table.
+	 *
+	 * All fields that are not found are removed from the list.
+	 *
+	 * @param string $table
+	 * @param array $fieldList
+	 */
+	protected function checkConfiguredMigrationFieldsAgainstTable($table, &$fieldList) {
+		foreach ($fieldList as $oldField => $newField) {
+			if (!$this->tableHasField($table, $newField)) {
+				$this->logger->debug('Field ' . $table . ':' . $newField . ' could not be found in TCA, will be ignored');
+				unset($fieldList[$oldField]);
+			}
+		}
+	}
+
+	/**
+	 * @param string $table
+	 * @param string $field
+	 * @return bool
+	 */
+	protected function tableHasField($table, $field) {
+		return isset($GLOBALS['TCA'][$table]) && isset($GLOBALS['TCA'][$table]['columns'][$field]);
+	}
+
 }
